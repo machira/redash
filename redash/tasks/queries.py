@@ -1,3 +1,4 @@
+import json
 import time
 import logging
 import signal
@@ -39,8 +40,7 @@ class QueryTask(object):
     @classmethod
     def add_task(cls, query, data_source, scheduled=False, metadata={}):
         query_hash = gen_query_hash(query)
-        logging.info("Inserting job for %s", query_hash)
-        logging.info("[Manager] Metadata: [%s]", metadata)
+        logging.info("Inserting job for %s with metadata=%s", query_hash, metadata)
         try_count = 0
         job = None
 
@@ -52,7 +52,7 @@ class QueryTask(object):
                 pipe.watch(cls._job_lock_id(query_hash, data_source.id))
                 job_id = pipe.get(cls._job_lock_id(query_hash, data_source.id))
                 if job_id:
-                    logging.info("[Manager][%s] Found existing job: %s", query_hash, job_id)
+                    logging.info("[%s] Found existing job: %s", query_hash, job_id)
 
                     job = cls(job_id=job_id)
                     if job.ready():
@@ -131,27 +131,30 @@ class QueryTask(object):
 
 @celery.task(name="redash.tasks.refresh.queries", base=BaseTask)
 def refresh_queries():
-    # self.status['last_refresh_at'] = time.time()
-    # self._save_status()
-
     logger.info("Refreshing queries...")
 
     outdated_queries_count = 0
-    for query in models.Query.outdated_queries():
-        QueryTask.add_task(query.query, query.data_source, scheduled=True,
-                           metadata={'Query ID': query.id, 'Username': 'Scheduled'})
-        outdated_queries_count += 1
+    query_ids = []
+
+    with statsd_client.timer('manager.outdated_queries_lookup'):
+        for query in models.Query.outdated_queries():
+            QueryTask.add_task(query.query, query.data_source,
+                               scheduled=True,
+                               metadata={'Query ID': query.id, 'Username': 'Scheduled'})
+            query_ids.append(query.id)
+            outdated_queries_count += 1
 
     statsd_client.gauge('manager.outdated_queries', outdated_queries_count)
 
-    logger.info("Done refreshing queries. Found %d outdated queries." % outdated_queries_count)
+    logger.info("Done refreshing queries. Found %d outdated queries: %s" % outdated_queries_count, query_ids)
 
     status = redis_connection.hgetall('redash:status')
     now = time.time()
 
     redis_connection.hmset('redash:status', {
         'outdated_queries_count': outdated_queries_count,
-        'last_refresh_at': now
+        'last_refresh_at': now,
+        'query_ids': json.dumps(query_ids)
     })
 
     statsd_client.gauge('manager.seconds_since_refresh', now - float(status.get('last_refresh_at', now)))
