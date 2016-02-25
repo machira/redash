@@ -1,34 +1,17 @@
-import datetime
 import time
 import logging
 import signal
-from flask_mail import Message
 import redis
-import hipchat
-import requests
-from redash.utils import json_dumps, base_url
-from requests.auth import HTTPBasicAuth
-from celery import Task
 from celery.result import AsyncResult
 from celery.utils.log import get_task_logger
-from redash import redis_connection, models, statsd_client, settings, utils, mail
+from redash import redis_connection, models, statsd_client, settings, utils
 from redash.utils import gen_query_hash
 from redash.worker import celery
 from redash.query_runner import InterruptException
-from version_check import run_version_check
+from .base import BaseTask
+from .alerts import check_alerts_for_query
 
 logger = get_task_logger(__name__)
-
-
-class BaseTask(Task):
-    abstract = True
-
-    def after_return(self, *args, **kwargs):
-        models.db.close_db(None)
-
-    def __call__(self, *args, **kwargs):
-        models.db.connect_db()
-        return super(BaseTask, self).__call__(*args, **kwargs)
 
 
 class QueryTask(object):
@@ -56,7 +39,7 @@ class QueryTask(object):
     @classmethod
     def add_task(cls, query, data_source, scheduled=False, metadata={}):
         query_hash = gen_query_hash(query)
-        logging.info("[Manager][%s] Inserting job", query_hash)
+        logging.info("Inserting job for %s", query_hash)
         logging.info("[Manager] Metadata: [%s]", metadata)
         try_count = 0
         job = None
@@ -146,7 +129,7 @@ class QueryTask(object):
         return "query_hash_job:%s:%s" % (data_source_id, query_hash)
 
 
-@celery.task(base=BaseTask)
+@celery.task(name="redash.tasks.refresh.queries", base=BaseTask)
 def refresh_queries():
     # self.status['last_refresh_at'] = time.time()
     # self._save_status()
@@ -174,7 +157,7 @@ def refresh_queries():
     statsd_client.gauge('manager.seconds_since_refresh', now - float(status.get('last_refresh_at', now)))
 
 
-@celery.task(base=BaseTask)
+@celery.task(name="redash.tasks.cleanup_tasks", base=BaseTask)
 def cleanup_tasks():
     # in case of cold restart of the workers, there might be jobs that still have their "lock" object, but aren't really
     # going to run. this job removes them.
@@ -206,12 +189,12 @@ def cleanup_tasks():
             logger.warning("%s is ready (%s), removing lock.", lock_keys[i], t.celery_status)
             redis_connection.delete(lock_keys[i])
 
-        # if t.celery_status == 'STARTED' and t.id not in all_tasks:
-        #     logger.warning("Couldn't find active job for: %s, removing lock.", lock_keys[i])
-        #     redis_connection.delete(lock_keys[i])
+            # if t.celery_status == 'STARTED' and t.id not in all_tasks:
+            #     logger.warning("Couldn't find active job for: %s, removing lock.", lock_keys[i])
+            #     redis_connection.delete(lock_keys[i])
 
 
-@celery.task(base=BaseTask)
+@celery.task(name="redash.tasks.cleanup_query_results", base=BaseTask)
 def cleanup_query_results():
     """
     Job to cleanup unused query results -- such that no query links to them anymore, and older than a week (so it's less
@@ -230,7 +213,7 @@ def cleanup_query_results():
     logger.info("Deleted %d unused query results out of total of %d." % (deleted_count, total_unused_query_results))
 
 
-@celery.task(base=BaseTask)
+@celery.task(name="redash.tasks.refresh_schemas", base=BaseTask)
 def refresh_schemas():
     """
     Refreshs the datasources schema.
@@ -256,7 +239,7 @@ class QueryExecutionError(Exception):
 # class ExecuteQueryTask(BaseTask):
 #     def run(self, ...):
 #         # logic
-@celery.task(bind=True, base=BaseTask, track_started=True, throws=(QueryExecutionError,))
+@celery.task(name="redash.tasks.execute_query", bind=True, base=BaseTask, track_started=True, throws=(QueryExecutionError,))
 def execute_query(self, query, data_source_id, metadata):
     signal.signal(signal.SIGINT, signal_handler)
     start_time = time.time()
@@ -318,101 +301,6 @@ def execute_query(self, query, data_source_id, metadata):
         raise QueryExecutionError(error)
 
     return query_result.id
-
-
-@celery.task(base=BaseTask)
-def record_event(event):
-    original_event = event.copy()
-    models.Event.record(event)
-    for hook in settings.EVENT_REPORTING_WEBHOOKS:
-        logging.debug("Forwarding event to: %s", hook)
-        try:
-            response = requests.post(hook, original_event)
-            if response.status_code != 200:
-                logging.error("Failed posting to %s: %s", hook, response.content)
-        except Exception:
-            logging.exception("Failed posting to %s", hook)
-
-
-@celery.task(base=BaseTask)
-def version_check():
-    run_version_check()
-
-
-@celery.task(bind=True, base=BaseTask)
-def check_alerts_for_query(self, query_id):
-    from redash.wsgi import app
-
-    logger.debug("Checking query %d for alerts", query_id)
-    query = models.Query.get_by_id(query_id)
-    for alert in query.alerts:
-        alert.query = query
-        new_state = alert.evaluate()
-        passed_rearm_threshold = False
-        if alert.rearm and alert.last_triggered_at:
-            passed_rearm_threshold = alert.last_triggered_at + datetime.timedelta(seconds=alert.rearm) < utils.utcnow()
-        if new_state != alert.state or (alert.state == models.Alert.TRIGGERED_STATE and passed_rearm_threshold ):
-            logger.info("Alert %d new state: %s", alert.id, new_state)
-            old_state = alert.state
-            alert.update_instance(state=new_state, last_triggered_at=utils.utcnow())
-
-            if old_state == models.Alert.UNKNOWN_STATE and new_state == models.Alert.OK_STATE:
-                logger.debug("Skipping notification (previous state was unknown and now it's ok).")
-                continue
-
-            # message = Message
-            html = """
-            Check <a href="{host}/alerts/{alert_id}">alert</a> / check <a href="{host}/queries/{query_id}">query</a>.
-            """.format(host=base_url(alert.query.org), alert_id=alert.id, query_id=query.id)
-
-            notify_mail(alert, html, new_state, app)
-
-            if settings.HIPCHAT_API_TOKEN:
-                notify_hipchat(alert, html, new_state)
-
-            if settings.WEBHOOK_ENDPOINT:
-                notify_webhook(alert, query, html, new_state)
-
-
-def notify_hipchat(alert, html, new_state):
-    try:
-        if settings.HIPCHAT_API_URL:
-            hipchat_client = hipchat.HipChat(token=settings.HIPCHAT_API_TOKEN, url=settings.HIPCHAT_API_URL)
-        else:
-            hipchat_client = hipchat.HipChat(token=settings.HIPCHAT_API_TOKEN)
-        message = '[' + new_state.upper() + '] ' + alert.name + '<br />' + html
-        hipchat_client.message_room(settings.HIPCHAT_ROOM_ID, settings.NAME, message.encode('utf-8', 'ignore'), message_format='html')
-    except Exception:
-        logger.exception("hipchat send ERROR.")
-
-
-def notify_mail(alert, html, new_state, app):
-    recipients = [s.email for s in alert.subscribers()]
-    logger.debug("Notifying: %s", recipients)
-    try:
-        with app.app_context():
-            message = Message(recipients=recipients,
-                              subject="[{1}] {0}".format(alert.name.encode('utf-8', 'ignore'), new_state.upper()),
-                              html=html)
-            mail.send(message)
-    except Exception:
-        logger.exception("mail send ERROR.")
-
-
-def notify_webhook(alert, query, html, new_state):
-    try:
-        data = {
-            'event': 'alert_state_change',
-            'alert': alert.to_dict(full=False),
-            'url_base': base_url(query.org)
-        }
-        headers = {'Content-Type': 'application/json'}
-        auth = HTTPBasicAuth(settings.WEBHOOK_USERNAME, settings.WEBHOOK_PASSWORD) if settings.WEBHOOK_USERNAME else None
-        resp = requests.post(settings.WEBHOOK_ENDPOINT, data=json_dumps(data), auth=auth, headers=headers)
-        if resp.status_code != 200:
-            logger.error("webhook send ERROR. status_code => {status}".format(status=resp.status_code))
-    except Exception:
-        logger.exception("webhook send ERROR.")
 
 
 @celery.task(base=BaseTask)
