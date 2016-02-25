@@ -1,0 +1,10 @@
+<div class="container">
+  <h2>Outdated Queries <small>(queries waiting to be refreshed)</small></h2>
+
+  <smart-table rows="queries" columns="gridColumns"
+               config="gridConfig"
+               class="table table-condensed table-hover"></smart-table>
+  <div class="badge">
+    Last update: <span am-time-ago="updatedAt"></span>
+  </div>
+</div>
