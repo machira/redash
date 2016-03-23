@@ -119,8 +119,6 @@ class QueryTaskTracker(object):
 
 
 class QueryTask(object):
-    MAX_RETRIES = 5
-
     # TODO: this is mapping to the old Job class statuses. Need to update the client side and remove this
     STATUSES = {
         'PENDING': 1,
@@ -140,75 +138,23 @@ class QueryTask(object):
     def id(self):
         return self._async_result.id
 
-    @classmethod
-    def add_task(cls, query, data_source, scheduled=False, metadata={}):
-        query_hash = gen_query_hash(query)
-        logging.info("Inserting job for %s with metadata=%s", query_hash, metadata)
-        try_count = 0
-        job = None
-
-        while try_count < cls.MAX_RETRIES:
-            try_count += 1
-
-            pipe = redis_connection.pipeline()
-            try:
-                pipe.watch(_job_lock_id(query_hash, data_source.id))
-                job_id = pipe.get(_job_lock_id(query_hash, data_source.id))
-                if job_id:
-                    logging.info("[%s] Found existing job: %s", query_hash, job_id)
-
-                    job = cls(job_id=job_id)
-                    tracker = QueryTaskTracker.get_by_task_id(job_id, connection=pipe)
-                    if scheduled:
-                        tracker.update(retries=tracker.retries+1)
-                    else:
-                        tracker.update(scheduled_retries=tracker.scheduled_retries+1)
-
-                    if job.ready():
-                        logging.info("[%s] job found is ready (%s), removing lock", query_hash, job.celery_status)
-                        redis_connection.delete(_job_lock_id(query_hash, data_source.id))
-                        job = None
-
-                if not job:
-                    pipe.multi()
-
-                    if scheduled:
-                        queue_name = data_source.scheduled_queue_name
-                    else:
-                        queue_name = data_source.queue_name
-
-                    result = execute_query.apply_async(args=(query, data_source.id, metadata), queue=queue_name)
-                    job = cls(async_result=result)
-                    tracker = QueryTaskTracker.create(result.id, 'created', query_hash, data_source.id, scheduled, metadata)
-                    tracker.save(connection=pipe)
-
-                    logging.info("[Manager][%s] Created new job: %s", query_hash, job.id)
-                    pipe.set(_job_lock_id(query_hash, data_source.id), job.id, settings.JOB_EXPIRY_TIME)
-                    pipe.execute()
-                break
-
-            except redis.WatchError:
-                continue
-
-        if not job:
-            logging.error("[Manager][%s] Failed adding job for query.", query_hash)
-
-        return job
-
     def to_dict(self):
         if self._async_result.status == 'STARTED':
             updated_at = self._async_result.result.get('start_time', 0)
         else:
             updated_at = 0
 
-        if self._async_result.failed() and isinstance(self._async_result.result, Exception):
+        status = self.STATUSES[self._async_result.status]
+
+        if isinstance(self._async_result.result, Exception):
             error = self._async_result.result.message
+            status = 4
         elif self._async_result.status == 'REVOKED':
             error = 'Query execution cancelled.'
         else:
             error = ''
 
-        if self._async_result.successful():
+        if self._async_result.successful() and not error:
             query_result_id = self._async_result.result
         else:
             query_result_id = None
@@ -216,7 +162,7 @@ class QueryTask(object):
         return {
             'id': self._async_result.id,
             'updated_at': updated_at,
-            'status': self.STATUSES[self._async_result.status],
+            'status': status,
             'error': error,
             'query_result_id': query_result_id,
         }
@@ -236,6 +182,62 @@ class QueryTask(object):
         return self._async_result.revoke(terminate=True, signal='SIGINT')
 
 
+def enqueue_query(query, data_source, scheduled=False, metadata={}):
+    query_hash = gen_query_hash(query)
+    logging.info("Inserting job for %s with metadata=%s", query_hash, metadata)
+    try_count = 0
+    job = None
+
+    while try_count < 5:
+        try_count += 1
+
+        pipe = redis_connection.pipeline()
+        try:
+            pipe.watch(_job_lock_id(query_hash, data_source.id))
+            job_id = pipe.get(_job_lock_id(query_hash, data_source.id))
+            if job_id:
+                logging.info("[%s] Found existing job: %s", query_hash, job_id)
+
+                job = QueryTask(job_id=job_id)
+                tracker = QueryTaskTracker.get_by_task_id(job_id, connection=pipe)
+                # tracker might not exist, if it's an old job
+                if scheduled and tracker:
+                    tracker.update(retries=tracker.retries+1)
+                elif tracker:
+                    tracker.update(scheduled_retries=tracker.scheduled_retries+1)
+
+                if job.ready():
+                    logging.info("[%s] job found is ready (%s), removing lock", query_hash, job.celery_status)
+                    redis_connection.delete(_job_lock_id(query_hash, data_source.id))
+                    job = None
+
+            if not job:
+                pipe.multi()
+
+                if scheduled:
+                    queue_name = data_source.scheduled_queue_name
+                else:
+                    queue_name = data_source.queue_name
+
+                result = execute_query.apply_async(args=(query, data_source.id, metadata), queue=queue_name)
+                job = QueryTask(async_result=result)
+                tracker = QueryTaskTracker.create(result.id, 'created', query_hash, data_source.id, scheduled, metadata)
+                tracker.save(connection=pipe)
+
+                logging.info("[%s] Created new job: %s", query_hash, job.id)
+                pipe.set(_job_lock_id(query_hash, data_source.id), job.id, settings.JOB_EXPIRY_TIME)
+                pipe.execute()
+            break
+
+        except redis.WatchError:
+            continue
+
+    if not job:
+        logging.error("[Manager][%s] Failed adding job for query.", query_hash)
+
+    return job
+
+
 @celery.task(name="redash.tasks.refresh_queries", base=BaseTask)
 def refresh_queries():
     logger.info("Refreshing queries...")
@@ -245,9 +247,9 @@ def refresh_queries():
 
     with statsd_client.timer('manager.outdated_queries_lookup'):
         for query in models.Query.outdated_queries():
-            QueryTask.add_task(query.query, query.data_source,
-                               scheduled=True,
-                               metadata={'Query ID': query.id, 'Username': 'Scheduled'})
+            enqueue_query(query.query, query.data_source,
+                          scheduled=True,
+                          metadata={'Query ID': query.id, 'Username': 'Scheduled'})
             query_ids.append(query.id)
             outdated_queries_count += 1
 
@@ -299,18 +301,15 @@ def cleanup_tasks():
             logger.warning("%s is ready (%s), removing lock.", lock_keys[i], t.celery_status)
             redis_connection.delete(lock_keys[i])
 
-            # if t.celery_status == 'STARTED' and t.id not in all_tasks:
-            #     logger.warning("Couldn't find active job for: %s, removing lock.", lock_keys[i])
-            #     redis_connection.delete(lock_keys[i])
-
 
 @celery.task(name="redash.tasks.cleanup_query_results", base=BaseTask)
 def cleanup_query_results():
     """
-    Job to cleanup unused query results -- such that no query links to them anymore, and older than a week (so it's less
-    likely to be open in someone's browser and be used).
+    Job to cleanup unused query results -- such that no query links to them anymore, and older than
+    settings.QUERY_RESULTS_MAX_AGE (a week by default, so it's less likely to be open in someone's browser and be used).
 
-    Each time the job deletes only 100 query results so it won't choke the database in case of many such results.
+    Each time the job deletes only settings.QUERY_RESULTS_CLEANUP_COUNT (100 by default) query results so it won't choke
+    the database in case of many such results.
     """
 
     logging.info("Running query results clean up (removing maximum of %d unused results, that are %d days old or more)",
@@ -326,9 +325,8 @@ def cleanup_query_results():
 @celery.task(name="redash.tasks.refresh_schemas", base=BaseTask)
 def refresh_schemas():
     """
-    Refreshs the datasources schema.
+    Refreshes the data sources schemas.
     """
-
     for ds in models.DataSource.select():
         logger.info("Refreshing schema for: {}".format(ds.name))
         try:
@@ -355,16 +353,17 @@ class QueryExecutor(object):
         self.metadata = metadata
         self.data_source = self._load_data_source()
         self.query_hash = gen_query_hash(self.query)
-        tracker = QueryTaskTracker.get_by_task_id(task.request.id)
-        if not tracker:
-            tracker = QueryTaskTracker.create(task.request.id, 'created', self.query_hash, self.data_source_id, False, metadata)
-        self.tracker = tracker
+        # Load existing tracker or create a new one if the job was created before code update:
+        self.tracker = QueryTaskTracker.get_by_task_id(task.request.id) or QueryTaskTracker.create(task.request.id,
+                                                                                                   'created',
+                                                                                                   self.query_hash,
+                                                                                                   self.data_source_id,
+                                                                                                   False, metadata)
 
     def run(self):
         signal.signal(signal.SIGINT, signal_handler)
         self.tracker.update(started_at=time.time(), state='started')
 
-        self.task.update_state(state='STARTED', meta={'start_time': self.tracker.started_at, 'custom_message': ''})
         logger.debug("Executing query:\n%s", self.query)
         self._log_progress('executing_query')
 
@@ -375,23 +374,24 @@ class QueryExecutor(object):
         self.tracker.update(error=error, run_time=run_time, state='saving_results')
 
         logger.info("task=execute_query query_hash=%s data_length=%s error=[%s]", self.query_hash, data and len(data), error)
-        self.task.update_state(state='STARTED', meta={'start_time': self.tracker.started_at, 'error': error, 'custom_message': ''})
 
         redis_connection.delete(_job_lock_id(self.query_hash, self.data_source.id))
 
         if error:
             self.tracker.update(state='failed')
-            raise QueryExecutionError(error)
+            result = QueryExecutionError(error)
+        else:
+            query_result, updated_query_ids = models.QueryResult.store_result(self.data_source.org_id, self.data_source.id,
+                                                                              self.query_hash, self.query, data,
+                                                                              run_time, utils.utcnow())
+            self._log_progress('checking_alerts')
+            for query_id in updated_query_ids:
+                check_alerts_for_query.delay(query_id)
+            self._log_progress('finished')
 
-        query_result, updated_query_ids = models.QueryResult.store_result(self.data_source.org_id, self.data_source.id,
-                                                                          self.query_hash, self.query, data,
-                                                                          run_time, utils.utcnow())
-        self._log_progress('checking_alerts')
-        for query_id in updated_query_ids:
-            check_alerts_for_query.delay(query_id)
-        self._log_progress('finished')
+            result = query_result.id
 
-        return query_result.id
+        return result
 
     def _annotate_query(self, query_runner):
         if query_runner.annotate_query():
@@ -400,9 +400,6 @@ class QueryExecutor(object):
             self.metadata['Queue'] = self.task.request.delivery_info['routing_key']
 
             annotation = u", ".join([u"{}: {}".format(k, v) for k, v in self.metadata.iteritems()])
-
-            logging.debug(u"Annotation: %s", annotation)
-
             annotated_query = u"/* {} */ {}".format(annotation, self.query)
         else:
             annotated_query = self.query
@@ -420,7 +417,6 @@ class QueryExecutor(object):
         return models.DataSource.get_by_id(self.data_source_id)
 
 
-@celery.task(name="redash.tasks.execute_query", bind=True, base=BaseTask, track_started=True, throws=(QueryExecutionError,))
+@celery.task(name="redash.tasks.execute_query", bind=True, base=BaseTask, track_started=True)
 def execute_query(self, query, data_source_id, metadata):
-    executor = QueryExecutor(self, query, data_source_id, metadata)
-    return executor.run()
+    return QueryExecutor(self, query, data_source_id, metadata).run()
