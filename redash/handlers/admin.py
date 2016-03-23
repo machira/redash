@@ -1,9 +1,9 @@
 import json
 from flask import current_app
 
-from redash.wsgi import app
 from redash import models, redis_connection
 from redash.utils import json_dumps
+from redash.handlers import routes
 from redash.permissions import require_super_admin
 from redash.tasks.queries import QueryTaskTracker
 
@@ -12,7 +12,7 @@ def json_response(response):
     return current_app.response_class(json_dumps(response), mimetype='application/json')
 
 
-@app.route('/api/admin/queries/outdated')
+@routes.route('/api/admin/queries/outdated', methods=['GET'])
 @require_super_admin
 def outdated_queries():
     manager_status = redis_connection.hgetall('redash:status')
@@ -25,12 +25,10 @@ def outdated_queries():
     else:
         outdated_queries = []
 
-    print outdated_queries
-
     return json_response(dict(queries=[q.to_dict(with_stats=True, with_last_modified_by=False) for q in outdated_queries], updated_at=manager_status['last_refresh_at']))
 
 
-@app.route('/api/admin/queries/tasks')
+@routes.route('/api/admin/queries/tasks', methods=['GET'])
 @require_super_admin
 def queries_tasks():
     waiting = QueryTaskTracker.all(QueryTaskTracker.WAITING_LIST)
@@ -44,7 +42,4 @@ def queries_tasks():
     }
 
     return json_response(response)
-
-
-
 

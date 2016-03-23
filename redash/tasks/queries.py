@@ -420,22 +420,6 @@ class QueryExecutor(object):
         return models.DataSource.get_by_id(self.data_source_id)
 
 
-@celery.task(base=BaseTask)
-def send_mail(to, subject, html, text):
-    from redash.wsgi import app
-
-    try:
-        with app.app_context():
-            message = Message(recipients=to,
-                              subject=subject,
-                              html=html,
-                              body=text)
-
-            mail.send(message)
-    except Exception:
-        logger.exception('Failed sending message: %s', message.subject)
-
-
 @celery.task(name="redash.tasks.execute_query", bind=True, base=BaseTask, track_started=True, throws=(QueryExecutionError,))
 def execute_query(self, query, data_source_id, metadata):
     executor = QueryExecutor(self, query, data_source_id, metadata)

@@ -34,15 +34,15 @@ angular.module('redash', [
     $compileProvider.aHrefSanitizationWhitelist(/^\s*(https?|http|data):/);
     $locationProvider.html5Mode(true);
     growlProvider.globalTimeToLive(2000);
-      $routeProvider.when('/admin/queries/outdated', {
-        templateUrl: '/views/admin/outdated_queries.html',
-        controller: 'AdminOutdatedQueriesCtrl'
-      });
-      $routeProvider.when('/admin/queries/tasks', {
-        templateUrl: '/views/admin/tasks.html',
-        controller: 'AdminTasksCtrl'
-      });
 
+    $routeProvider.when('/admin/queries/outdated', {
+      templateUrl: '/views/admin/outdated_queries.html',
+      controller: 'AdminOutdatedQueriesCtrl'
+    });
+    $routeProvider.when('/admin/queries/tasks', {
+      templateUrl: '/views/admin/tasks.html',
+      controller: 'AdminTasksCtrl'
+    });
     $routeProvider.when('/dashboard/:dashboardSlug', {
       templateUrl: '/views/dashboard.html',
       controller: 'DashboardCtrl',
