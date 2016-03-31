@@ -1,5 +1,5 @@
 body {
-  padding-top: 70px;
+  padding-top: 50px;
 }
 
 body.headless {
@@ -217,8 +217,7 @@ li.widget:hover {
 /* CodeMirror */
 .CodeMirror {
   border: 1px solid #eee;
-  height: auto;
-  min-height: 300px;
+  height: 100%;
   margin-bottom: 10px;
 }
 
@@ -317,7 +316,7 @@ to add those CSS styles here. */
   border-radius: 50%;
 }
 
-.nav-tabs > li.rd-tab-btn {
+.tab-nav > li.rd-tab-btn {
   float: right;
   padding-left: 10px;
 }
@@ -442,24 +441,15 @@ counter-renderer counter-name {
 }
 
 .schema-container {
-  height: 300px;
-  position: relative;
+  height: 100%;
   z-index: 10;
-  resize: both;
-  background: white;
-}
-
-.schema-container .form-control {
-  margin-bottom: 10px;
-  box-shadow: none;
+  background-color: white;
 }
 
 .schema-browser {
-  height: 100%;
+  height: calc(100% - 45px);
   overflow-y: auto;
   overflow-x: hidden;
-  background: white;
-  resize: both;
   border: 1px solid rgba(0,0,0,.15);
 }
 
@@ -616,3 +606,8 @@ div.table-name:hover {
     transition: all 0.35s ease;
 }
 
+/* Fixes for SuperFlat */
+
+.table-hover > tbody > tr:hover {
+  background-color: #f4f4f4;
+}

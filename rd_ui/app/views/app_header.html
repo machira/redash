@@ -1,3 +1,90 @@
+<div>
+
+<!--<header id="header" class="clearfix" data-spy="affix" data-offset-top="65">-->
+  <!--<ul class="header-inner">-->
+    <!--&lt;!&ndash; Logo &ndash;&gt;-->
+    <!--<li class="logo">-->
+      <!--<a href=""><img src="/images/redash_icon_small.png" alt="" height="40px"></a>-->
+      <!--<div id="menu-trigger"><i class="zmdi zmdi-menu"></i></div>-->
+    <!--</li>-->
+
+    <!--&lt;!&ndash; Search &ndash;&gt;-->
+    <!--<li class="top-search">-->
+      <!--<input class="ts-input" placeholder="Search..." type="text">-->
+
+      <!--<i class="ts-reset zmdi zmdi-close"></i>-->
+    <!--</li>-->
+
+    <!--&lt;!&ndash; Settings &ndash;&gt;-->
+    <!--<li class="pull-right dropdown hidden-xs">-->
+      <!--<a href="" data-toggle="dropdown">-->
+        <!--<i class="zmdi zmdi-more-vert"></i>-->
+      <!--</a>-->
+      <!--<ul class="dropdown-menu">-->
+        <!--<li><a data-toggle="fullscreen" href="">Toggle Fullscreen</a></li>-->
+        <!--<li><a data-toggle="localStorage" href="">Clear Local Storage</a></li>-->
+        <!--<li><a href="">Account Settings</a></li>-->
+        <!--<li><a href="">Other Settings</a></li>-->
+      <!--</ul>-->
+    <!--</li>-->
+
+    <!--&lt;!&ndash; Quick Apps &ndash;&gt;-->
+    <!--<li class="hidden-xs dropdown pull-right">-->
+      <!--<a href="" data-toggle="dropdown">-->
+        <!--<i class="zmdi zmdi-apps"></i>-->
+      <!--</a>-->
+
+      <!--<div class="dropdown-menu pull-right" id="launch-apps">-->
+        <!--<div class="dropdown-header bg-teal">SUPERFLAT APPS</div>-->
+
+        <!--<div class="la-body">-->
+          <!--<div class="lab-item">-->
+            <!--<a href="" class="bg-red">-->
+              <!--<i class="zmdi zmdi-calendar"></i>-->
+            <!--</a>-->
+            <!--<small>Calendar</small>-->
+          <!--</div>-->
+
+          <!--<div class="lab-item">-->
+            <!--<a href="" class="bg-green">-->
+              <!--<i class="zmdi zmdi-file-text"></i>-->
+            <!--</a>-->
+            <!--<small>Files</small>-->
+          <!--</div>-->
+
+          <!--<div class="lab-item">-->
+            <!--<a href="" class="bg-blue">-->
+              <!--<i class="zmdi zmdi-email"></i>-->
+            <!--</a>-->
+            <!--<small>Mail</small>-->
+          <!--</div>-->
+
+          <!--<div class="lab-item">-->
+            <!--<a href="" class="bg-orange">-->
+              <!--<i class="zmdi zmdi-trending-up"></i>-->
+            <!--</a>-->
+            <!--<small>Analytics</small>-->
+          <!--</div>-->
+
+          <!--<div class="lab-item">-->
+            <!--<a href="" class="bg-cyan">-->
+              <!--<i class="zmdi zmdi-view-headline"></i>-->
+            <!--</a>-->
+            <!--<small>News</small>-->
+          <!--</div>-->
+
+          <!--<div class="lab-item">-->
+            <!--<a href="" class="bg-teal">-->
+              <!--<i class="zmdi zmdi-image"></i>-->
+            <!--</a>-->
+            <!--<small>Gallery</small>-->
+          <!--</div>-->
+        <!--</div>-->
+      <!--</div>-->
+    <!--</li>-->
+  <!--</ul>-->
+<!--</header>-->
+
 <nav class="navbar navbar-inverse navbar-fixed-top app-header" role="navigation">
   <div class="container">
     <div class="navbar-header">
@@ -12,8 +99,10 @@
     </div>
     <div class="collapse navbar-collapse navbar-ex1-collapse">
       <ul class="nav navbar-nav">
-        <li class="dropdown" ng-show="groupedDashboards.length > 0 || otherDashboards.length > 0 || currentUser.hasPermission('create_dashboard')" dropdown>
-          <a href="#" class="dropdown-toggle" dropdown-toggle><span class="fa fa-tachometer"></span> <b class="caret"></b></a>
+        <li class="dropdown"
+            ng-show="groupedDashboards.length > 0 || otherDashboards.length > 0 || currentUser.hasPermission('create_dashboard')"
+            dropdown>
+          <a href="#" class="dropdown-toggle" dropdown-toggle>Dashboards <b class="caret"></b></a>
           <ul class="dropdown-menu" dropdown-menu>
                     <span ng-repeat="(name, group) in groupedDashboards">
                         <li class="dropdown-submenu">
@@ -28,8 +117,10 @@
             <li ng-repeat="dashboard in otherDashboards">
               <a role="menu-item" ng-href="dashboard/{{dashboard.slug}}" ng-bind="dashboard.name"></a>
             </li>
-            <li class="divider" ng-show="currentUser.hasPermission('create_dashboard') && (groupedDashboards.length > 0 || otherDashboards.length > 0)"></li>
-            <li><a data-toggle="modal" href="#new_dashboard_dialog" ng-show="currentUser.hasPermission('create_dashboard')">New Dashboard</a></li>
+            <li class="divider"
+                ng-show="currentUser.hasPermission('create_dashboard') && (groupedDashboards.length > 0 || otherDashboards.length > 0)"></li>
+            <li><a data-toggle="modal" href="#new_dashboard_dialog"
+                   ng-show="currentUser.hasPermission('create_dashboard')">New Dashboard</a></li>
           </ul>
         </li>
         <li class="dropdown" ng-show="currentUser.hasPermission('view_query')" dropdown>
@@ -57,7 +148,8 @@
           <a href="users" title="Users"><i class="fa fa-users"></i></a>
         </li>
         <li class="dropdown" dropdown>
-          <a href="#" class="dropdown-toggle" dropdown-toggle><span ng-bind="currentUser.name"></span> <span class="caret"></span></a>
+          <a href="#" class="dropdown-toggle" dropdown-toggle><span ng-bind="currentUser.name"></span> <span
+            class="caret"></span></a>
           <ul class="dropdown-menu" dropdown-menu>
             <li style="width:300px">
               <a ng-href="users/{{currentUser.id}}">
@@ -82,3 +174,4 @@
     </div>
   </div>
 </nav>
+</div>

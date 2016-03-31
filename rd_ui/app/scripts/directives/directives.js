@@ -125,7 +125,7 @@
         tabsCollection: '=',
         selectedTab: '='
       },
-      template: '<ul class="nav nav-tabs"><li ng-class="{active: tab==selectedTab}" ng-repeat="tab in tabsCollection"><a href="{{basePath}}#{{tab.key}}">{{tab.name}}</a></li></ul>',
+      template: '<ul class="tab-nav bg-white"><li ng-class="{active: tab==selectedTab}" ng-repeat="tab in tabsCollection"><a href="{{basePath}}#{{tab.key}}">{{tab.name}}</a></li></ul>',
       replace: true,
       link: function ($scope, element, attrs) {
         $scope.basePath = $location.path().substring(1);
@@ -381,6 +381,19 @@
             '</div>' +
           '</div>' +
         '</div>'
+    }
+  })
+
+  directives.directive('pageHeader', function() {
+    return {
+      restrict: 'E',
+      transclude: true,
+      templateUrl: '/views/directives/page_header.html',
+      link: function(scope, elem, attrs) {
+        attrs.$observe('title', function(value){
+          scope.title = value;
+        });
+      }
     }
   })
 

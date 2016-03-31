@@ -2,15 +2,32 @@
     <ol class="breadcrumb">
         <li class="active">Alerts</li>
     </ol>
+
+    <div class="tile">
+      <div class="action-header clearfix">
+        <h2 class="ah-label hidden-xs">Alerts</h2>
+        <ul class="ah-actions actions">
+            <li>
+                <a href="">
+                    <i class="zmdi zmdi-time"></i>
+                </a>
+            </li>
+          </ul>
+
+      </div>
+      <div class="t-body tb-padding">
+        <smart-table rows="alerts" columns="gridColumns"
+                     config="gridConfig"
+                     class="table table-condensed table-hover"></smart-table>
+      </div>
+    </div>
+
     <div class="row">
         <div class="col-md-12">
             <p>
                 <a href="alerts/new" class="btn btn-default"><i class="fa fa-plus"></i> New Alert</a>
             </p>
 
-            <smart-table rows="alerts" columns="gridColumns"
-                         config="gridConfig"
-                         class="table table-condensed table-hover"></smart-table>
         </div>
     </div>
 </div>
