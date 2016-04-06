@@ -265,6 +265,21 @@
       }
     });
 
+    $scope.openVisualizationEditor = function(visualization) {
+      $modal.open({
+        templateUrl: '/views/directives/visualization_editor.html',
+        windowClass:'modal-xl',
+        scope: $scope,
+        controller: ['$scope', '$modalInstance', function($scope, $modalInstance) {
+          $scope.modalInstance = $modalInstance;
+          $scope.visualization = visualization;
+          $scope.close = function() {
+            $modalInstance.close();
+          }
+        }]
+      });
+    }
+
     $scope.openScheduleForm = function() {
       if (!$scope.isQueryOwner || !$scope.canScheduleQuery) {
         return;

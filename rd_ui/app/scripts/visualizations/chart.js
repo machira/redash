@@ -69,6 +69,7 @@
         options: '=?'
       },
       link: function (scope, element, attrs) {
+        scope.currentTab = 'general';
         scope.colors = _.extend({'Automatic': null}, ColorPalette);
 
         scope.stackingOptions = {

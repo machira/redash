@@ -395,6 +395,24 @@
         });
       }
     }
-  })
+  });
+
+  directives.directive('settingsScreen', ['$location', function($location) {
+    return {
+      restrict: 'E',
+      transclude: true,
+      templateUrl: '/views/directives/settings_screen.html',
+      link: function(scope, elem, attrs) {
+        console.log($location.path());
+        scope.usersPage = _.string.startsWith($location.path(), '/users');
+        scope.groupsPage = _.string.startsWith($location.path(), '/groups');
+        scope.dsPage = _.string.startsWith($location.path(), '/data_sources');
+
+        scope.showGroupsLink = currentUser.hasPermission('list_users');
+        scope.showUsersLink = currentUser.hasPermission('list_users');
+        scope.showDsLink = currentUser.hasPermission('admin');
+      }
+    }
+  }]);
 
 })();

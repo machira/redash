@@ -7308,7 +7308,7 @@ strong {
   margin-left: 5px !important;
 }
 .m-r-5 {
-  margin-right: 5px !important;
+  /* margin-right: 5px !important; */
 }
 .m-10 {
   margin: 10px !important;
@@ -8963,7 +8963,7 @@ fieldset[disabled] .btn-inverse.active {
   display: block;
 }
 .t-header.th-alt {
-  padding: 10px 15px 9px;
+  /* padding: 10px 15px 9px; */
 }
 .t-header.th-alt .actions > a {
   color: #fff;

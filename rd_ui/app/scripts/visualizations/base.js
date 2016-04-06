@@ -137,8 +137,8 @@
         query: '=',
         queryResult: '=',
         visualization: '=?',
-        openEditor: '@',
-        onNewSuccess: '=?'
+        onNewSuccess: '=?',
+        modalInstance: '=?'
       },
       link: function (scope) {
         scope.editRawOptions = currentUser.hasPermission('edit_raw_chart');
@@ -196,11 +196,16 @@
               // new visualization
               scope.query.visualizations.push(result);
               scope.onNewSuccess && scope.onNewSuccess(result);
+              scope.modalInstance.close();
             }
           }, function error() {
             growl.addErrorMessage("Visualization could not be saved");
           });
         };
+
+        scope.close = function() {
+          scope.modalInstance.close();
+        }
       }
     };
   };
